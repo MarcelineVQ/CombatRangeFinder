@@ -459,7 +459,9 @@ function crfFrame:ADDON_LOADED(addon)
   CRFDB.settings = CRFDB.settings or {}
   settings = CRFDB.settings
   for _,data in ipairs(commands) do
-    settings[data.name] = settings[data.name] or data.default
+    if settings[data.name] == nil then
+      settings[data.name] = data.default
+    end
   end
   CRFDB.units = CRFDB.units or {}
 
@@ -839,6 +841,9 @@ local distance_change = 0
 local boss_markers = {}
 local elapsed_total = 0
 local was_disabled = false
+
+-- Cached color state variables
+local lastColorState, lastAlpha = nil, nil
 function crfFrame_OnUpdate()
   elapsed_total = elapsed_total + arg1
   if elapsed_total < 1 / updates_per_sec then return end -- 60 updates/s cap
@@ -954,26 +959,40 @@ function crfFrame_OnUpdate()
 
     local alpha = (obj_distance < 30) and 1 or ((obj_distance > 50) and 0 or (1 - ((obj_distance - 25) / (50 - 25))))
 
+    -- Determine the new color state and desired RGB values.
+    local newColorState, r, g, b
     if IsInRange(obj_distance) then
       if settings.largearrow and playerdot1.icon:GetTexture() ~= textures.in_range then
         playerdot1.icon:SetTexture(textures.in_range)
       end
+
       if not is_facing then
-        playerdot1.icon:SetVertexColor(1, 0.5, 0, alpha)
+        newColorState = "not_facing"
+        r, g, b = 1, 0.5, 0
       elseif is_behind then
-        playerdot1.icon:SetVertexColor(0.25, 0.75, 0.65, alpha)
+        newColorState = "behind"
+        r, g, b = 0.25, 0.75, 0.65
       else
-        playerdot1.icon:SetVertexColor(0.1, 0.85, 0.15, alpha)
+        newColorState = "normal"
+        r, g, b = 0.1, 0.85, 0.15
       end
     else
-      playerdot1.icon:SetVertexColor(0.95, 0.1, 0.1, alpha)
+      newColorState = "out_range"
+      r, g, b = 0.95, 0.1, 0.1
       if playerdot1.icon:GetTexture() ~= textures.out_range then
         playerdot1.icon:SetTexture(textures.out_range)
       end
     end
 
+    -- Only update the vertex color if the new state differs from the cached state.
+    if lastColorState ~= newColorState or lastAlpha ~= alpha then
+      playerdot1.icon:SetVertexColor(r, g, b, alpha)
+      lastColorState = newColorState
+      lastAlpha = alpha
+    end
+
     playerdot1.icon:SetPoint("CENTER", UIParent, "CENTER", midX, midY)
-    playerdot1.icon:Show()
+    if not playerdot1.icon:IsVisible() then playerdot1.icon:Show() end
   else
     targetdot1.icon:Hide()
     playerdot1.icon:Hide()
