@@ -386,10 +386,29 @@ local function Check_Actions(slot)
 end
 
 crfFrame:SetScript("OnEvent", function ()
+  -- Handle shutdown to prevent SuperWoW API crashes during logout
+  if event == "PLAYER_LOGOUT" or event == "PLAYER_LEAVING_WORLD" then
+    crf_isShuttingDown = true
+    this:UnregisterAllEvents()
+    this:SetScript("OnUpdate", nil)
+    this:SetScript("OnEvent", nil)
+    -- Hide all dots
+    for i = 1, getn(DotPool) do
+      if DotPool[i] then
+        DotPool[i]:Hide()
+      end
+    end
+    return
+  end
   crfFrame[event](this,arg1,arg2,arg3,arg4,arg5,arg6,arg7,arg8,arg9,arg0)
 end)
 
+-- Shutdown flag to prevent SuperWoW API calls during logout (crash prevention)
+local crf_isShuttingDown = false
+
 crfFrame:RegisterEvent("ADDON_LOADED")
+crfFrame:RegisterEvent("PLAYER_LOGOUT")
+crfFrame:RegisterEvent("PLAYER_LEAVING_WORLD")
 
 local function GetRestofMessage(args)
   if args[2] then
@@ -845,6 +864,9 @@ local was_disabled = false
 -- Cached color state variables
 local lastColorState, lastAlpha = nil, nil
 function crfFrame_OnUpdate()
+  -- Prevent SuperWoW API calls during shutdown (crash prevention)
+  if crf_isShuttingDown then return end
+
   elapsed_total = elapsed_total + arg1
   if elapsed_total < 1 / updates_per_sec then return end -- 60 updates/s cap
   elapsed_total = 0
