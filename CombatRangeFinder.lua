@@ -17,6 +17,7 @@ local sqrt               = math.sqrt
 local atan2              = math.atan2
 local mod                = math.mod
 local pi                 = math.pi
+local TWO_PI             = pi * 2
 local abs                = math.abs
 local tan                = math.tan
 local floor              = math.floor
@@ -69,16 +70,14 @@ local crfFrame = CreateFrame("Frame", "crfFrame", UIParent)
 crfFrame:SetAllPoints(UIParent)  -- Covers the entire screen
 
 function RotateTexture(texture, angle)
-  -- Calculate sine and cosine of the angle
-  local cosTheta = cos(angle)
-  local sinTheta = sin(angle)
+  local cosHalf = cos(angle) * 0.5
+  local sinHalf = sin(angle) * 0.5
 
-  -- SetTexCoord parameters for rotation
   texture:SetTexCoord(
-    0.5 - cosTheta * 0.5 + sinTheta * 0.5, 0.5 - sinTheta * 0.5 - cosTheta * 0.5, -- Top-left
-    0.5 + cosTheta * 0.5 + sinTheta * 0.5, 0.5 + sinTheta * 0.5 - cosTheta * 0.5, -- Top-right
-    0.5 - cosTheta * 0.5 - sinTheta * 0.5, 0.5 - sinTheta * 0.5 + cosTheta * 0.5, -- Bottom-left
-    0.5 + cosTheta * 0.5 - sinTheta * 0.5, 0.5 + sinTheta * 0.5 + cosTheta * 0.5  -- Bottom-right
+    0.5 - cosHalf + sinHalf, 0.5 - sinHalf - cosHalf,
+    0.5 + cosHalf + sinHalf, 0.5 + sinHalf - cosHalf,
+    0.5 - cosHalf - sinHalf, 0.5 - sinHalf + cosHalf,
+    0.5 + cosHalf - sinHalf, 0.5 + sinHalf + cosHalf
   )
 end
 
@@ -86,57 +85,6 @@ local textures = {
   in_range = "Interface\\Addons\\CombatRangeFinder\\line2",
   out_range = "Interface\\Addons\\CombatRangeFinder\\line",
 }
-
-function ScaleTexture(texture, scaleX, scaleY)
-  -- Adjust scaling to make higher values increase size
-  scaleX = 1 / scaleX
-  scaleY = 1 / scaleY
-
-  -- Calculate offsets based on scale
-  local offsetX = (1 - scaleX) / 2
-  local offsetY = (1 - scaleY) / 2
-
-  -- SetTexCoord parameters for scaling
-  texture:SetTexCoord(
-      0 + offsetX, 0 + offsetY, -- Top-left
-      1 - offsetX, 0 + offsetY, -- Top-right
-      0 + offsetX, 1 - offsetY, -- Bottom-left
-      1 - offsetX, 1 - offsetY  -- Bottom-right
-  )
-end
-
-function TransformTexture(texture, angle, scaleX, scaleY)
-  -- Precompute sine and cosine of the angle
-  local cosTheta = cos(angle)
-  local sinTheta = sin(angle)
-
-  -- scaleX = 1 / scaleX
-  -- scaleY = 1 / scaleY
-
-  -- Define the four original UV corners (centered around 0.5, 0.5)
-  local corners = {
-      {x = -0.5 * scaleX, y =  0.5 * scaleY}, -- Top-left
-      {x =  0.5 * scaleX, y =  0.5 * scaleY}, -- Top-right
-      {x = -0.5 * scaleX, y = -0.5 * scaleY}, -- Bottom-left
-      {x =  0.5 * scaleX, y = -0.5 * scaleY}, -- Bottom-right
-  }
-
-  -- Rotate each corner around the center (0.5, 0.5)
-  for i, corner in ipairs(corners) do
-      local x = corner.x
-      local y = corner.y
-      corner.u = 0.5 + (x * cosTheta - y * sinTheta) -- Rotated u
-      corner.v = 0.5 + (x * sinTheta + y * cosTheta) -- Rotated v
-  end
-
-  -- Apply the transformed UV coordinates
-  texture:SetTexCoord(
-      corners[1].u, corners[1].v, -- Top-left
-      corners[2].u, corners[2].v, -- Top-right
-      corners[3].u, corners[3].v, -- Bottom-left
-      corners[4].u, corners[4].v  -- Bottom-right
-  )
-end
 
 local UnitPosition = function (unit)
   return UnitXP("unitPosition",unit)
@@ -151,37 +99,8 @@ local UnitFacing = function (unit)
 end
 
 function calculateDistance(x1,y1,z1,x2,y2,z2)
-  if (type(x1) == "table") and (type(y1) == "table") then
-    return sqrt((x1.x - y1.x)^2 + (x1.y - y1.y)^2 + (x1.z - y1.z)^2)
-  else
-    return sqrt((x2 - x1)^2 + (y2 - y1)^2 + (z2 - z1)^2)
-  end
-end
-
--- not neccesarily player first, just easy convention
-function IsUnitFacingUnit(playerX, playerY, playerFacing, targetX, targetY, maxAngle)
-  -- 1. Calculate the angle to the target
-  local angleToTarget = atan2(targetY - playerY, targetX - playerX)
-
-  -- 2. Normalize both angles to 0..2*pi
-  if angleToTarget < 0 then
-    angleToTarget = angleToTarget + 2 * pi
-  end
-
-  -- 3. Calculate the angular difference and normalize it to [-pi, pi]
-  local angularDifference = mod(angleToTarget - playerFacing, 2 * pi)
-  if angularDifference > pi then
-    angularDifference = angularDifference - 2 * pi
-  elseif angularDifference < -pi then
-    angularDifference = angularDifference + 2 * pi
-  end
-
-  -- 4. Check if the player is facing the target within the maxAngle range
-  return (abs(angularDifference) <= maxAngle),angularDifference
-end
-
-local function round_to(z,x)
-  return floor(x * z) / z
+  local dx, dy, dz = x2 - x1, y2 - y1, z2 - z1
+  return sqrt(dx*dx + dy*dy + dz*dz)
 end
 
 -- Create a pool for managing dots
@@ -391,16 +310,6 @@ end)
 
 crfFrame:RegisterEvent("ADDON_LOADED")
 
-local function GetRestofMessage(args)
-  if args[2] then
-    local name = args[2]
-    for i = 3, table.getn(args) do
-      name = name .. " " .. args[i]
-    end
-    return name
-  end
-end
-
 local commands = {
   { name = "enable",      default = true,  desc = "Enable or disable addon" },
   { name = "arrow",       default = true,  desc = "Show indicator arrow for (attackable) target" },
@@ -504,23 +413,6 @@ function crfFrame:ADDON_LOADED(addon)
   -- if rings_debug then MakeHealMarkers() end
 end
 
--- local died_at = { x = 0.00000001, y = 0.00000001, z = 0.00000001 }
-
-local deds = {}
-function crfFrame:CheckDeaths()
-  for i=1,GetNumRaidMembers() do
-    local unit = "raid"..i
-    if UnitCanAssist("player",unit) and UnitIsDead(unit) and UnitIsConnected(unit) and not deds[unit] then
-      local dot = DotPool:GetDot()
-      DeathDot(dot,unit)
-      deds[unit] = dot
-    elseif not UnitIsDead(unit) and deds[unit] then
-      DotPool:ReturnDot(deds[unit])
-      deds[unit] = nil
-    end
-  end
-end
-
 -- Set texture coordinates for a specific raid marker
 -- MarkerIndex is the position in the 4x4 grid, starting from 1 for the top-left icon
 function SetRaidMarkerTexture(texture, markerIndex)
@@ -553,40 +445,41 @@ function GetUnitData(unit)
   return { guid = guid, name = UnitName(unit), type = type }
 end
 
+-- Pre-allocated mark table (created once)
+local _mark_table = { "mark1", "mark2", "mark3", "mark4", "mark5", "mark6", "mark7", "mark8" }
+
+-- Marker scaling constants (pre-computed)
+local MARKER_MAX_DIST = 40
+local MARKER_MIN_DIST = 5
+local MARKER_MIN_SCALE = 0.5
+local MARKER_SCALE_RANGE = 1 / (MARKER_MAX_DIST - MARKER_MIN_DIST)  -- 1/35
+local MARKER_SCALE_FACTOR = 1 - MARKER_MIN_SCALE  -- 0.5
+
 function crfFrame:UpdateRaidMarkers()
   if not self.raidMarkers then return end
 
-  local mark_table = { "mark1", "mark2", "mark3", "mark4", "mark5", "mark6", "mark7", "mark8" }
-  local px, py, pz = UnitPosition("player") -- Player position
+  local px, py, pz = UnitPosition("player")
+  local markersize = settings.markerssize
 
-  -- Scaling configuration
-  local maxDistance = 40 -- Distance at which markers are smallest
-  local minDistance = 5  -- Distance at which markers are full size
-  local minScale = 0.5   -- Minimum scale (50% of original size)
   for mark, marker in ipairs(self.raidMarkers) do
-    local _,unit = UnitExists(mark_table[mark])
+    local _,unit = UnitExists(_mark_table[mark])
     if unit and settings.markers and UnitIsVisible(unit) and not UnitIsDead(unit) then
-      local tx, ty, tz = UnitPosition(unit) -- Target position
+      local tx, ty, tz = UnitPosition(unit)
       marker:SetPosition(tx, ty, tz)
-      marker.icon.original_width = settings.markerssize
-      marker.icon.original_height = settings.markerssize
 
       local distance = calculateDistance(px, py, pz, tx, ty, tz)
 
-      -- Smooth scaling: normalize distance to a scale factor
-      local scale = 1
-      if distance > minDistance then
-        scale = 1 - ((distance - minDistance) / (maxDistance - minDistance)) * (1 - minScale)
-        scale = max(minScale, scale) -- Clamp to minScale
-      end
-
-      -- Apply the scaled size
-      marker.icon:SetWidth(marker.icon.original_width * scale)
-      marker.icon:SetHeight(marker.icon.original_height * scale)
-
-      if distance > 40 then
+      if distance > MARKER_MAX_DIST then
         marker.icon:Hide()
       else
+        local scale = 1
+        if distance > MARKER_MIN_DIST then
+          scale = 1 - (distance - MARKER_MIN_DIST) * MARKER_SCALE_RANGE * MARKER_SCALE_FACTOR
+        end
+
+        local size = markersize * scale
+        marker.icon:SetWidth(size)
+        marker.icon:SetHeight(size)
         marker.icon:Show()
       end
     else
@@ -602,80 +495,25 @@ function crfFrame:CreateRaidMarkers()
   end
 end
 
-function crfFrame:UpdateBossMarkers()
-  if not self.bossMarkers then return end
-
-  local px, py, pz = UnitPosition("player") -- Player position
-
-  -- Scaling configuration
-  local maxDistance = 40 -- Distance at which markers are smallest
-  local minDistance = 5  -- Distance at which markers are full size
-  local minScale = 0.5   -- Minimum scale (50% of original size)
-
-  for guid, marker in ipairs(self.bossMarkers) do
-    -- local unit = "mark"..mark
-    if UnitExists(guid) and UnitIsVisible(guid) then
-      if not UnitIsDead(guid) then
-        local tx, ty, tz = UnitPosition(unit) -- Target position
-        marker:SetPosition(tx, ty, tz)
-
-        local distance = calculateDistance(px, py, pz, tx, ty, tz)
-
-        -- Smooth scaling: normalize distance to a scale factor
-        local scale = 1
-        if distance > minDistance then
-          scale = 1 - ((distance - minDistance) / (maxDistance - minDistance)) * (1 - minScale)
-          scale = max(minScale, scale) -- Clamp to minScale
-        end
-
-        -- Apply the scaled size
-        marker.icon:SetWidth(marker.icon.original_width * scale)
-        marker.icon:SetHeight(marker.icon.original_height * scale)
-
-        if distance > 40 then
-          marker.icon:Hide()
-        else
-          marker.icon:Show()
-        end
-      else
-        marker.icon:Hide()
-      end
-    else
-      self.bossMarkers[guid] = nil
-      marker.icon:Hide()
-      ReturnDot(marker)
-    end
-  end
-end
-
-function crfFrame:CreateBossMarker(guid,r,g,b,a)
-  self.bossMarkers = self.bossMarkers or {}
-
-  local marker = DotPool:GetDot()
-  marker.icon:SetTexture("Interface\\Addons\\CombatRangeFinder\\arrow1.tga")
-  marker.icon.original_width = 64
-  marker.icon.original_height = 64
-  marker.icon:SetWidth(marker.icon.original_width)
-  marker.icon:SetHeight(marker.icon.original_height)
-  marker.icons:SetVertexColor(r,g,b,a)
-  marker.text:SetText("")
-
-  self.bossMarkers[guid] = marker
-end
-
 function crfFrame:ACTIONBAR_SLOT_CHANGED(slot)
   Check_Actions(slot)
 end
 
-local function IsInRange(distance)
-  local melee_range = (UnitRace("player") == "Tauren") and 6.5 or 5
-  local can_attack = UnitCanAttack("player", "target")
+-- Cache player melee range (determined by race, never changes)
+local _player_melee_range = nil
 
-  if range_check_slot and can_attack then
-      return IsActionInRange(range_check_slot) == 1
+local function GetPlayerMeleeRange()
+  if not _player_melee_range then
+    _player_melee_range = (UnitRace("player") == "Tauren") and 6.5 or 5
   end
+  return _player_melee_range
+end
 
-  return distance <= melee_range
+local function IsInRange(distance)
+  if range_check_slot and UnitCanAttack("player", "target") then
+    return IsActionInRange(range_check_slot) == 1
+  end
+  return distance <= GetPlayerMeleeRange()
 end
 
 function crfFrame:PLAYER_ENTERING_WORLD()
@@ -693,86 +531,42 @@ function crfFrame:UNIT_MODEL_CHANGED(guid)
   if not CRFDB.units[guid] then CRFDB.units[guid] = GetUnitData(guid) end
 end
 
-function ScaleFOV(fov)
-  -- Define the known FOV and corresponding scaled values
-  local fov_values = {0.2, 1, 1.57, 2, 3, 3.14}
-  local scaled_values = {0.14, 0.69, 1.135, 1.3125, 1.82, 1.885}
+-- Pre-allocated FOV lookup tables (created once)
+local _fov_values = {0.2, 1, 1.57, 2, 3, 3.14}
+local _scaled_values = {0.14, 0.69, 1.135, 1.3125, 1.82, 1.885}
+local _fov_count = 6
 
-  -- Handle the case where FOV is below the smallest known value or above the largest known value
-  if fov <= fov_values[1] then
-      return scaled_values[1]
-  elseif fov >= fov_values[table.getn(fov_values)] then
-      return scaled_values[table.getn(scaled_values)]
+function ScaleFOV(fov)
+  if fov <= _fov_values[1] then
+    return _scaled_values[1]
+  elseif fov >= _fov_values[_fov_count] then
+    return _scaled_values[_fov_count]
   end
 
-  -- Perform piecewise linear interpolation
-  for i = 1, table.getn(fov_values) - 1 do
-      local fov1, fov2 = fov_values[i], fov_values[i + 1]
-      local scale1, scale2 = scaled_values[i], scaled_values[i + 1]
-
-      if fov >= fov1 and fov <= fov2 then
-          -- Calculate the slope (m) and intercept (b) for the linear interpolation
-          local m = (scale2 - scale1) / (fov2 - fov1)
-          local b = scale1 - m * fov1
-
-          -- Return the interpolated value
-          return m * fov + b
-      end
+  for i = 1, _fov_count - 1 do
+    local fov1, fov2 = _fov_values[i], _fov_values[i + 1]
+    if fov >= fov1 and fov <= fov2 then
+      local scale1, scale2 = _scaled_values[i], _scaled_values[i + 1]
+      local m = (scale2 - scale1) / (fov2 - fov1)
+      return m * fov + (scale1 - m * fov1)
+    end
   end
 end
+
+-- Projection parameters (pre-computed to avoid per-frame math)
+local screenWidth = GetScreenWidth()
+local screenHeight = GetScreenHeight()
+local aspectRatio = screenWidth / screenHeight
 
 local c_fov = UnitXP("cameraFoV")
 FOV = ScaleFOV(c_fov)
 fovScale = tan(FOV / 2)
--- fovScale = tan(ScaleFOV(2) / 2)
--- print(format("%.2f _ %.2f _ %.2f _ %.2f _ %.2f",ScaleFOV(0.2),ScaleFOV(1),ScaleFOV(2),ScaleFOV(3),ScaleFOV(3.14)))
-
--- Projection parameters
-local screenWidth = GetScreenWidth()
-local screenHeight = GetScreenHeight()
-local uiScale = UIParent:GetEffectiveScale()
-local aspectRatio = screenWidth / screenHeight
-
--- Field of view scale factor for projection
-
-function PosToScreen(x,y,z)
-
-  return screenX,screenY
-end
+local invFovScale = 1 / fovScale
+-- Combined projection multipliers (invFovScale * halfScreen)
+local projX = invFovScale * screenWidth * 0.5
+local projY = aspectRatio * invFovScale * screenHeight * 0.5
 
 crfFrame.camera_data = { sinPitch = 0, cosPitch = 0, yaw = 0, sinYaw = 0, cosYaw = 0, x = 0, y = 0, z = 0 }
-
-function crfFrame:GetScaleBasedOnDistance(distance,limit)
-  if distance >= (limit or 150) then
-      return 0
-  elseif distance <= 0 then
-      return 1
-  end
-  return 1 - (distance / (limit or 150))
-end
-
--- set, and store
-local function SetElementScale(ele,scale,w,h)
-  ele.width = ele.width or ele:GetWidth()
-  ele.height = ele.height or ele:GetHeight()
-  w = w or ele.width
-  h = h or ele.height
-  ele:SetWidth(max(1,scale * w))
-  ele:SetHeight(max(1,scale * h))
-end
-
-local function SetTextScale(text,scale,size)
-  local f_path,f_size,f_flags = text:GetFont()
-  local path,flags = text.path or f_path, text.flags or f_flags
-  size = size or text.size
-  text:SetFont(path,max(1,scale*size),flags)
-end
-
-local function calculateYaw(x1, y1, x2, y2)
-  local deltaX = x2 - x1
-  local deltaY = y2 - y1
-  return atan2(deltaY, deltaX)
-end
 
 function crfFrame:UpdateCamera()
   local camera = self.camera_data
@@ -795,7 +589,7 @@ function crfFrame:UpdateCamera()
   camera.cosYaw = cos(camera.yaw)
 
   camera.sinPitch = -UnitXP("cameraPitch")
-  camera.cosPitch = sqrt(1 - camera.sinPitch^2)
+  camera.cosPitch = sqrt(1 - camera.sinPitch * camera.sinPitch)
 end
 
 function crfFrame:ShowArrow()
@@ -806,51 +600,53 @@ function crfFrame:ShowArrow()
     and not UnitIsDead("target")
 end
 
-local function NormalizeAngle(angle)
-  if angle < 0 then
-    return angle + 2 * pi
-  end
-  return angle
-end
-
 local function GetAngleBetweenPoints(x1, y1, x2, y2)
   local angle = atan2(x2 - x1, y2 - y1)
-  return NormalizeAngle(angle), angle
+  if angle < 0 then
+    return angle + TWO_PI
+  end
+  return angle
 end
 
 local function IsUnitFacingUnit(playerX, playerY, playerFacing, targetX, targetY, maxAngle)
   local angleToTarget = atan2(targetY - playerY, targetX - playerX)
   if angleToTarget < 0 then
-    angleToTarget = angleToTarget + 2 * pi
+    angleToTarget = angleToTarget + TWO_PI
   end
 
-  local angularDifference = mod(angleToTarget - playerFacing, 2 * pi)
+  local angularDifference = mod(angleToTarget - playerFacing, TWO_PI)
   if angularDifference > pi then
-    angularDifference = angularDifference - 2 * pi
+    angularDifference = angularDifference - TWO_PI
   elseif angularDifference < -pi then
-    angularDifference = angularDifference + 2 * pi
+    angularDifference = angularDifference + TWO_PI
   end
 
-  return (abs(angularDifference) <= maxAngle), angularDifference
+  return abs(angularDifference) <= maxAngle
 end
 
 -- Precompute constant values outside the OnUpdate handler
 local CONSTANT_FACING_LIMIT = 61 * (pi / 180)  -- constant facing limit in radians
+local HALF_PI = pi / 2
+local ALPHA_FADE_START = 30
+local ALPHA_FADE_END = 50
+local ALPHA_FADE_RANGE = 1 / (ALPHA_FADE_END - 25)  -- 1/25
 
 local distance_change = 0
 local boss_markers = {}
 local elapsed_total = 0
 local was_disabled = false
+local update_interval = 1 / updates_per_sec
 
 -- Cached color state variables
 local lastColorState, lastAlpha = nil, nil
+local lastTextureInRange = nil  -- tracks which texture is currently set
+
 function crfFrame_OnUpdate()
   elapsed_total = elapsed_total + arg1
-  if elapsed_total < 1 / updates_per_sec then return end -- 60 updates/s cap
+  if elapsed_total < update_interval then return end
   elapsed_total = 0
 
   local dotCount = getn(DotPool)
-  local settings = settings
 
   if not settings.enable then
     if not was_disabled then
@@ -893,7 +689,6 @@ function crfFrame_OnUpdate()
   -- local cx,cy,cz = CameraPosition()
 
   crf:UpdateRaidMarkers()
-  -- crfFrame:UpdateBossMarkers()
 
   -- Cache camera values into locals
   local camX, camY, camZ = camera.x, camera.y, camera.z
@@ -924,8 +719,8 @@ function crfFrame_OnUpdate()
         local normX = finalX / finalY
         local normZ = finalZ / finalY
 
-        local screenX = (normX / fovScale) * (screenWidth / 2)
-        local screenY = (normZ * aspectRatio) / fovScale * (screenHeight / 2)
+        local screenX = normX * projX
+        local screenY = normZ * projY
 
         dot:SetPoint("CENTER", UIParent, "CENTER", screenX, screenY)
         dot.screenX = screenX
@@ -941,7 +736,7 @@ function crfFrame_OnUpdate()
     local target_facing = UnitFacing("target")
 
     local is_facing = player_facing and IsUnitFacingUnit(px, py, player_facing, tx, ty, CONSTANT_FACING_LIMIT)
-    local is_behind = target_facing and not IsUnitFacingUnit(tx, ty, target_facing, px, py, pi / 2)
+    local is_behind = target_facing and not IsUnitFacingUnit(tx, ty, target_facing, px, py, HALF_PI)
 
     local _, _, _, pxPoint, pyPoint = playerdot1:GetPoint()
     local _, _, _, txPoint, tyPoint = targetdot1:GetPoint()
@@ -957,13 +752,14 @@ function crfFrame_OnUpdate()
     local angle1 = GetAngleBetweenPoints(pxPoint, pyPoint, txPoint, tyPoint) + (pi / 2)
     RotateTexture(playerdot1.icon, angle1)
 
-    local alpha = (obj_distance < 30) and 1 or ((obj_distance > 50) and 0 or (1 - ((obj_distance - 25) / (50 - 25))))
+    local alpha = (obj_distance < ALPHA_FADE_START) and 1 or ((obj_distance > ALPHA_FADE_END) and 0 or (1 - (obj_distance - 25) * ALPHA_FADE_RANGE))
 
     -- Determine the new color state and desired RGB values.
     local newColorState, r, g, b
     if IsInRange(obj_distance) then
-      if settings.largearrow and playerdot1.icon:GetTexture() ~= textures.in_range then
+      if settings.largearrow and lastTextureInRange ~= true then
         playerdot1.icon:SetTexture(textures.in_range)
+        lastTextureInRange = true
       end
 
       if not is_facing then
@@ -979,8 +775,9 @@ function crfFrame_OnUpdate()
     else
       newColorState = "out_range"
       r, g, b = 0.95, 0.1, 0.1
-      if playerdot1.icon:GetTexture() ~= textures.out_range then
+      if lastTextureInRange ~= false then
         playerdot1.icon:SetTexture(textures.out_range)
+        lastTextureInRange = false
       end
     end
 
